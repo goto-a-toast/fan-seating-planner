@@ -14,6 +14,17 @@ https://goto-a-toast.github.io/fan-seating-planner/
 - 座席図は SVG ファイルとして書き出せます。
 - マーキング表は現場での椅子出し用の数値表です。
 
+## 公開の仕組み（初回のみ手動設定が必要）
+
+`main` ブランチへの push で、`.github/workflows/deploy-pages.yml` が GitHub Pages へ自動公開します。
+
+ただし **リポジトリで一度だけ Pages を有効化する操作が必要** です。ワークフローに渡されるトークンには Pages を新規作成する権限が無いため、自動化できません。
+
+1. リポジトリの **Settings** → 左メニューの **Pages** を開く
+2. **Build and deployment** の **Source** を **GitHub Actions** に変更する
+
+この設定後は、`main` への push だけで自動的に公開が更新されます。
+
 ## 構成
 
 - `index.html` — アプリ本体。HTML・CSS・JavaScript がこの1ファイルにすべて入っており、外部ライブラリは使っていません。
