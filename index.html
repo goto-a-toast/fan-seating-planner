@@ -83,11 +83,11 @@
   button.secondary { background: #fff; color: var(--ink); border-color: var(--rule); }
   button:hover { filter: brightness(1.08); }
 
-  .solve-note {
+  .note {
     margin: 10px 0 0; padding: 9px 10px; background: #fff;
     border-left: 3px solid var(--mark); font-size: 13px; line-height: 1.6;
   }
-  .solve-note:empty { display: none; }
+  .note:empty { display: none; }
 
   /* ---------- 右：図面と一覧 ---------- */
   .sheet { padding: 24px 32px 60px; }
@@ -223,13 +223,16 @@
     <label class="check"><input type="checkbox" id="showNum" checked> 図に座席番号を入れる</label>
 
     <h2>設営ガイド</h2>
-    <label class="check"><input type="checkbox" id="showGrid"> 1mグリッドを重ねる</label>
+    <div class="field">
+      <label for="gridStep">グリッドを重ねる</label>
+      <select id="gridStep">
+        <option value="0">なし</option>
+        <option value="0.5">50cm</option>
+        <option value="1">1m</option>
+      </select>
+    </div>
     <label class="check"><input type="checkbox" id="showArc" checked> 各列の円弧を描く</label>
     <label class="check"><input type="checkbox" id="showRadial"> 放射ガイド線を描く</label>
-    <div class="field">
-      <label for="markEvery">目印を付ける間隔 (席)</label>
-      <input type="number" id="markEvery" value="5" min="1" max="20" step="1">
-    </div>
     <div class="field field--wide">
       <label for="scale" style="display:block;margin-bottom:6px">印刷スケール</label>
       <select id="scale">
@@ -240,20 +243,11 @@
       </select>
     </div>
 
-    <h2>席数から逆算</h2>
-    <div class="field">
-      <label for="target">目標の席数</label>
-      <input type="number" id="target" value="400" min="1" step="10">
+    <h2>入力の保存</h2>
+    <p class="note">入力した数値はこのブラウザに自動で保存され、次に開いたときそのまま復元されます。</p>
+    <div class="actions">
+      <button type="button" class="secondary" id="btnReset">入力を初期値に戻す</button>
     </div>
-    <div class="field field--wide">
-      <select id="solveFor">
-        <option value="rows">列数を調整する</option>
-        <option value="fan">扇の開き角を調整する</option>
-        <option value="r0">最前列までの距離を調整する</option>
-      </select>
-    </div>
-    <button type="button" class="secondary" id="btnSolve">この席数に合わせる</button>
-    <p class="solve-note" id="solveNote"></p>
 
     <div class="actions">
       <button type="button" id="btnPrint">印刷 / PDFで保存</button>
@@ -342,7 +336,6 @@ function readParams() {
     rowGap:    +$("rowGap").value,
     mode:      $("mode").value,
     numbering: $("numbering").value,
-    markEvery: Math.max(1, Math.round(+$("markEvery").value)),
   };
 }
 
@@ -419,22 +412,32 @@ function draw(data) {
   s.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="' +
     minX.toFixed(2) + ' ' + minY.toFixed(2) + ' ' + w.toFixed(2) + ' ' + h.toFixed(2) + '">');
 
-  // --- 1mグリッド（5mごとに濃くする）---
-  if ($("showGrid").checked) {
+  // --- グリッド（50cm または 1m 間隔）---
+  // 線の濃さを3段階に分け、50cmでも1mと5mの位置がひと目で分かるようにする。
+  const gridStep = +$("gridStep").value;
+  if (gridStep > 0) {
     const g = [];
-    for (let x = Math.ceil(minX); x <= minX + w; x++) {
-      const bold = x % 5 === 0;
-      g.push('<line x1="' + x + '" y1="' + minY + '" x2="' + x + '" y2="' + (minY + h) +
-        '" stroke="' + (bold ? "#b9c4c2" : "#e2e6e5") + '" stroke-width="' + (bold ? 0.035 : 0.018) + '"/>');
-      if (bold) g.push('<text x="' + (x + 0.12) + '" y="' + (minY + 0.5) +
-        '" font-size="0.32" fill="#9aa5a3" font-family="sans-serif">' + x + '</text>');
+    const maxX = minX + w, maxY = minY + h;
+    const COLOR = ["#eceeed", "#dde3e2", "#b9c4c2"];   // 端数 / 1m / 5m
+    const WIDTH = [0.012, 0.022, 0.035];
+    // 5mちょうどを一番濃く、1mちょうどを中間、その間（50cm）を一番薄くする
+    const tierOf = v => (v % 5 === 0 ? 2 : v % 1 === 0 ? 1 : 0);
+    const line = (x1, y1, x2, y2, t) =>
+      '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 +
+      '" stroke="' + COLOR[t] + '" stroke-width="' + WIDTH[t] + '"/>';
+    const label = (x, y, v) => '<text x="' + x + '" y="' + y +
+      '" font-size="0.32" fill="#9aa5a3" font-family="sans-serif">' + v + '</text>';
+
+    // 0.5 を足し続けると誤差が積もるので、刻み数を整数で数えて毎回掛ける
+    for (let n = Math.ceil(minX / gridStep); n * gridStep <= maxX; n++) {
+      const x = +(n * gridStep).toFixed(3), t = tierOf(x);
+      g.push(line(x, minY, x, maxY, t));
+      if (t === 2) g.push(label(x + 0.12, minY + 0.5, x));
     }
-    for (let y = Math.ceil(minY); y <= minY + h; y++) {
-      const bold = y % 5 === 0;
-      g.push('<line x1="' + minX + '" y1="' + y + '" x2="' + (minX + w) + '" y2="' + y +
-        '" stroke="' + (bold ? "#b9c4c2" : "#e2e6e5") + '" stroke-width="' + (bold ? 0.035 : 0.018) + '"/>');
-      if (bold) g.push('<text x="' + (minX + 0.12) + '" y="' + (y - 0.15) +
-        '" font-size="0.32" fill="#9aa5a3" font-family="sans-serif">' + y + '</text>');
+    for (let n = Math.ceil(minY / gridStep); n * gridStep <= maxY; n++) {
+      const y = +(n * gridStep).toFixed(3), t = tierOf(y);
+      g.push(line(minX, y, maxX, y, t));
+      if (t === 2) g.push(label(minX + 0.12, y - 0.15, y));
     }
     s.push(g.join(""));
   }
@@ -477,13 +480,10 @@ function draw(data) {
   const sw = p.seatW, sd = 0.42;
   const showNum = $("showNum").checked;
   seats.forEach(st => {
-    // n席ごとの目印は塗りつぶして目立たせる
-    const isMark = st.index % p.markEvery === 0;
     s.push('<g transform="translate(' + st.x.toFixed(3) + ' ' + st.y.toFixed(3) +
       ') rotate(' + (-st.deg).toFixed(2) + ')">' +
       '<rect x="' + (-sw / 2) + '" y="' + (-sd / 2) + '" width="' + sw + '" height="' + sd +
-      '" rx="0.06" fill="' + (isMark ? "#f0e4c8" : "#fdfdfb") + '" stroke="#23272a" stroke-width="' +
-      (isMark ? 0.04 : 0.022) + '"/>' +
+      '" rx="0.06" fill="#fdfdfb" stroke="#23272a" stroke-width="0.022"/>' +
       (showNum ? '<text x="0" y="0.1" text-anchor="middle" font-size="0.2" fill="#6b7074" ' +
         'font-family="sans-serif">' + st.num + '</text>' : '') +
       '</g>');
@@ -497,8 +497,17 @@ function draw(data) {
     s.push('<text x="' + x.toFixed(2) + '" y="' + (y + 0.15).toFixed(2) +
       '" text-anchor="middle" font-size="0.42" fill="#9a7635" font-family="sans-serif">' +
       row.label + '</text>');
+    // 端杭の印は座席の外側に置き、短い引出線で実際の位置（端の席の中心）を指す。
+    // 座席の上に重ねると座席番号が読めなくなるため。
     [-1, 1].forEach(sign => {
-      s.push('<circle cx="' + (sign * row.endX).toFixed(3) + '" cy="' + row.endY.toFixed(3) +
+      const ang = sign * row.halfAngle;
+      const sin = Math.sin(ang), cos = Math.cos(ang);
+      const inner = row.r + sd / 2 + 0.04;   // 座席のすぐ外側
+      const outer = row.r + sd / 2 + 0.26;
+      s.push('<line x1="' + (inner * sin).toFixed(3) + '" y1="' + (inner * cos).toFixed(3) +
+        '" x2="' + (outer * sin).toFixed(3) + '" y2="' + (outer * cos).toFixed(3) +
+        '" stroke="#9a7635" stroke-width="0.03"/>' +
+        '<circle cx="' + (outer * sin).toFixed(3) + '" cy="' + (outer * cos).toFixed(3) +
         '" r="0.1" fill="#9a7635"/>');
     });
   });
@@ -562,14 +571,13 @@ function render() {
   }).join("");
 
   // --- 設営手順（実際の数値を差し込む）---
-  const gauge = (pitch * p.markEvery).toFixed(2);
   $("steps").innerHTML = [
     "ステージ前面の中央に中心杭を打つ。すべての寸法はこの杭からの実測値です。",
     "中心杭から客席側へ巻尺をまっすぐ伸ばし、センターラインとして地面に固定する。ステージ前面と直角になっているか、3-4-5の直角出し（3m・4mの辺に対して対角が5m）で確認する。",
     "各列の端杭を打つ。マーキング表の「端杭：前後」だけセンターラインを進み、そこから直角に左右へ「端杭：左右」の距離を測った2点です。",
     "中心杭を軸に、ロープを「ロープの長さ」に合わせて張り、左右の端杭の間を弧を描くように歩いてラインを引く。石灰やビニールテープで印を付けます。",
-    "弧に沿って巻尺を置き、" + pitch.toFixed(2) + "mごとに椅子の中心を印す。図で色が付いた席が" +
-      p.markEvery + "席ごとの目印なので、" + gauge + "mの物差し棒を作っておくと巻尺なしで送っていけます。",
+    "弧に沿って巻尺を置き、" + pitch.toFixed(2) + "mごとに椅子の中心を印す。" +
+      (pitch * 10).toFixed(2) + "m（10席分）の物差し棒を作っておくと、巻尺なしで送っていけます。",
     "椅子を印に合わせ、背もたれが中心杭を向くように据える。座席番号は列の" +
       ($("numbering").value === "left" ? "左端から連番" : "中央から左右へ") + "です。",
   ].map(t => "<li>" + t + "</li>").join("");
@@ -582,55 +590,6 @@ function render() {
     " ／ 作成 " + new Date().toLocaleDateString("ja-JP");
 }
 
-// =====================================================================
-// 席数からの逆算
-// 席数は列数・開き角・最前列距離のどれに対しても単調に増えるので、
-// 二分探索で目標席数を初めて満たす値を探せる。
-// =====================================================================
-
-function totalSeats(p) { return computeLayout(p).seats.length; }
-
-function solve(key, target, lo, hi, decimals) {
-  const base = readParams();
-  const test = v => { const q = Object.assign({}, base); q[key] = v; return totalSeats(q); };
-
-  if (test(hi) < target) return null;
-
-  if (key === "rows") {
-    for (let n = Math.max(1, lo); n <= hi; n++) if (test(n) >= target) return n;
-    return null;
-  }
-  for (let i = 0; i < 60; i++) {
-    const mid = (lo + hi) / 2;
-    if (test(mid) >= target) hi = mid; else lo = mid;
-  }
-  // 四捨五入すると目標を下回ることがあるので切り上げて丸める
-  const unit = Math.pow(10, decimals);
-  return Math.ceil(hi * unit) / unit;
-}
-
-$("btnSolve").addEventListener("click", () => {
-  const target = Math.round(+$("target").value);
-  const key = $("solveFor").value;
-  const spec = {
-    rows: { lo: 1, hi: 120, dec: 0, label: "列数",             unit: "列" },
-    fan:  { lo: 5, hi: 180, dec: 1, label: "扇の開き角",       unit: "°"  },
-    r0:   { lo: 1, hi: 200, dec: 1, label: "最前列までの距離", unit: "m"  },
-  }[key];
-
-  const v = solve(key, target, spec.lo, spec.hi, spec.dec);
-  if (v === null) {
-    $("solveNote").textContent = spec.label + "を" + spec.hi + spec.unit + "まで広げても" +
-      target + "席に届きません。他の項目も見直してください。";
-    return;
-  }
-  $(key).value = v;
-  render();
-  const got = window.__data.seats.length;
-  $("solveNote").textContent = spec.label + " " + v + spec.unit + " で " + got +
-    "席（目標 " + target + "席、" + (got - target >= 0 ? "+" : "") + (got - target) + "席）。";
-});
-
 /** ファイルとして保存する */
 function download(name, text, type) {
   const url = URL.createObjectURL(new Blob([text], { type: type }));
@@ -640,7 +599,46 @@ function download(name, text, type) {
 }
 const csv = rows => "\uFEFF" + rows.map(r => r.join(",")).join("\r\n");
 
-$("form").addEventListener("input", render);
+// =====================================================================
+// 入力値の保存
+// 入力するたびにこのブラウザ（localStorage）へ保存し、次に開いたときに
+// そのまま復元する。プライベートウィンドウなど保存できない環境でも
+// 通常どおり使えるよう、読み書きは try/catch で囲んでおく。
+// =====================================================================
+
+const STORE_KEY = "fan-seating-planner:inputs";
+const fields = Array.prototype.slice.call($("form").querySelectorAll("input, select"));
+const initialValues = {};   // HTMLに書いてある初期値を控えておく
+const valueOf = el => (el.type === "checkbox" ? el.checked : el.value);
+fields.forEach(el => { initialValues[el.id] = valueOf(el); });
+
+function applyValues(data) {
+  fields.forEach(el => {
+    if (!(el.id in data)) return;
+    if (el.type === "checkbox") el.checked = !!data[el.id];
+    else el.value = data[el.id];
+  });
+}
+
+function saveInputs() {
+  const data = {};
+  fields.forEach(el => { data[el.id] = valueOf(el); });
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できなくても続行 */ }
+}
+
+function restoreInputs() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch (e) { return; }
+  if (data && typeof data === "object") applyValues(data);
+}
+
+$("btnReset").addEventListener("click", () => {
+  applyValues(initialValues);
+  try { localStorage.removeItem(STORE_KEY); } catch (e) { /* 消せなくても続行 */ }
+  render();
+});
+
+$("form").addEventListener("input", () => { saveInputs(); render(); });
 $("btnPrint").addEventListener("click", () => window.print());
 
 $("btnCsv").addEventListener("click", () => {
@@ -665,6 +663,7 @@ $("btnSvg").addEventListener("click", () => {
   download("座席図.svg", $("plan").innerHTML.trim(), "image/svg+xml");
 });
 
+restoreInputs();
 render();
 </script>
 </body>
