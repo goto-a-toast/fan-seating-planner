@@ -467,14 +467,14 @@ function draw(data) {
   // --- ステージと中心杭 ---
   s.push('<rect x="' + (-p.stageW / 2) + '" y="' + (-p.stageD) + '" width="' + p.stageW +
     '" height="' + p.stageD + '" fill="#1f4b47" opacity="0.9"/>');
-  s.push('<text x="0" y="' + (-p.stageD / 2 + 0.25) + '" text-anchor="middle" font-size="0.8" ' +
+  s.push('<text x="0" y="' + (-p.stageD / 2 + 0.25) + '" text-anchor="middle" font-size="0.4" ' +
     'fill="#ffffff" font-family="sans-serif">STAGE</text>');
   s.push('<line x1="0" y1="' + (-p.stageD) + '" x2="0" y2="' + (rMax + 1) +
     '" stroke="#c7c4ba" stroke-width="0.03" stroke-dasharray="0.4 0.3"/>');
   s.push('<circle cx="0" cy="0" r="0.22" fill="none" stroke="#9a7635" stroke-width="0.06"/>' +
     '<line x1="-0.35" y1="0" x2="0.35" y2="0" stroke="#9a7635" stroke-width="0.05"/>' +
     '<line x1="0" y1="-0.35" x2="0" y2="0.35" stroke="#9a7635" stroke-width="0.05"/>' +
-    '<text x="0.5" y="-0.3" font-size="0.4" fill="#9a7635" font-family="sans-serif">中心杭</text>');
+    '<text x="0.5" y="-0.3" font-size="0.2" fill="#9a7635" font-family="sans-serif">中心杭</text>');
 
   // --- 座席（ステージを向くよう回転。幅は実寸なので隙間が間隔になる）---
   const sw = p.seatW, sd = 0.42;
