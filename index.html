@@ -113,14 +113,23 @@
   .zoombar output { min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums; }
   .zoombar .hint { margin-left: auto; }
 
+  /* 外側は台紙。図そのものを白い紙に見せて、余白をブランクではなく
+     「紙の周りの余白」として読ませる。中央寄せは flex の justify-content
+     ではなく子の margin:auto で行う（拡大して枠からはみ出したとき、
+     justify-content:center だと左側がスクロールで辿れなくなるため）。*/
   .plan {
-    background: #fff; border: 1px solid var(--rule); padding: 12px;
+    background: #d9d6cd; border: 1px solid var(--rule); padding: 16px;
     height: 70vh; min-height: 300px; overflow: auto;
+    display: flex;
     cursor: grab; user-select: none; -webkit-user-select: none;
     overscroll-behavior: contain;
   }
   .plan.is-dragging { cursor: grabbing; }
-  .plan svg { display: block; width: calc(100% * var(--zoom, 1)); height: auto; }
+  .plan svg {
+    display: block; flex: none; margin: auto;
+    width: calc(100% * var(--zoom, 1)); height: auto;
+    background: #fff; box-shadow: 0 1px 5px rgba(35, 39, 42, 0.22);
+  }
 
   .warn {
     margin: 14px 0 0; padding: 10px 12px; background: #fff;
@@ -157,8 +166,11 @@
     .masthead, .controls, .actions, .warn, .zoombar { display: none; }
     .workspace { display: block; }
     .sheet { padding: 0; }
-    .plan { border: none; padding: 0; height: auto; min-height: 0; overflow: visible; }
-    .plan svg { width: var(--print-w); max-width: 100%; }
+    .plan {
+      border: none; padding: 0; height: auto; min-height: 0;
+      overflow: visible; display: block; background: #fff;
+    }
+    .plan svg { width: var(--print-w); max-width: 100%; margin: 0; box-shadow: none; }
     .print-header {
       display: block; border-bottom: 1px solid var(--ink);
       padding-bottom: 6px; margin-bottom: 10px;
@@ -650,10 +662,13 @@ function fitScale() {
   if (!svg) return 1;
   const vb = svg.viewBox.baseVal;
   if (!vb || !vb.width) return 1;
-  const pad = 24;   // .plan の padding 12px × 2
-  const heightAtFullWidth = (box.clientWidth - pad) * (vb.height / vb.width);
+  // clientWidth/clientHeight はパディングを含むので、その分を引いて中身の領域を出す
+  const cs = getComputedStyle(box);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const heightAtFullWidth = (box.clientWidth - padX) * (vb.height / vb.width);
   if (heightAtFullWidth <= 0) return 1;
-  return Math.min(1, (box.clientHeight - pad) / heightAtFullWidth);
+  return Math.min(1, (box.clientHeight - padY) / heightAtFullWidth);
 }
 
 function zoomToFit() {
@@ -702,9 +717,14 @@ $("plan").addEventListener("pointermove", e => {
 // 入力するたびにこのブラウザ（localStorage）へ保存し、次に開いたときに
 // そのまま復元する。プライベートウィンドウなど保存できない環境でも
 // 通常どおり使えるよう、読み書きは try/catch で囲んでおく。
+//
+// 保存時は「そのときの値」と「そのときHTMLに書かれていた初期値」を
+// 一緒に記録しておく。復元するとき、初期値のほうが書き換わっている項目は
+// 保存値を捨てて新しい初期値を使う。こうしないと、初期値を変更しても
+// 古い保存値がいつまでも優先されて反映されない。
 // =====================================================================
 
-const STORE_KEY = "fan-seating-planner:inputs";
+const STORE_KEY = "fan-seating-planner:inputs2";
 const fields = Array.prototype.slice.call($("form").querySelectorAll("input, select"));
 const initialValues = {};   // HTMLに書いてある初期値を控えておく
 const valueOf = el => (el.type === "checkbox" ? el.checked : el.value);
@@ -719,15 +739,24 @@ function applyValues(data) {
 }
 
 function saveInputs() {
-  const data = {};
-  fields.forEach(el => { data[el.id] = valueOf(el); });
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できなくても続行 */ }
+  const values = {};
+  fields.forEach(el => { values[el.id] = valueOf(el); });
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ values: values, defaults: initialValues }));
+  } catch (e) { /* 保存できなくても続行 */ }
 }
 
 function restoreInputs() {
-  let data = null;
-  try { data = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch (e) { return; }
-  if (data && typeof data === "object") applyValues(data);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch (e) { return; }
+  if (!saved || !saved.values || !saved.defaults) return;
+  const use = {};
+  fields.forEach(el => {
+    // 初期値が当時と変わっている項目は、新しい初期値のままにしておく
+    if (saved.defaults[el.id] !== initialValues[el.id]) return;
+    if (el.id in saved.values) use[el.id] = saved.values[el.id];
+  });
+  applyValues(use);
 }
 
 $("btnReset").addEventListener("click", () => {
