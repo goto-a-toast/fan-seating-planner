@@ -1,0 +1,42 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# GITHUB_TOKEN に Pages へ公開するための権限を与える
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 公開は同時に1つだけ。実行中のデプロイはキャンセルしない
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Pages の設定（未設定なら有効化する）
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: 公開するファイルをまとめる
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # ビルド不要の静的サイトなのでリポジトリ直下をそのまま公開する
+          path: .
+
+      - name: GitHub Pages へ公開
+        id: deployment
+        uses: actions/deploy-pages@v4
