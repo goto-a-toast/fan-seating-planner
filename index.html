@@ -165,7 +165,7 @@
   }
 
   /* ---------- 印刷・PDF保存用 ---------- */
-  @page { size: A4 landscape; margin: 12mm; }
+  @page { size: A4 landscape; margin: 15mm; }
   @media print {
     body { background: #fff; font-size: 10pt; }
     .masthead, .controls, .actions, .warn, .zoombar { display: none; }
@@ -178,11 +178,14 @@
       border: none; padding: 0; height: auto; min-height: 0;
       overflow: visible; display: block; background: #fff;
     }
-    /* --print-plan-h は「用紙に合わせる」ときだけJSが入れる。
-       幅だけでなく高さも抑えることで、図面が必ず1ページに収まる */
+    /* 印刷時の 100vh は「用紙から余白を引いた高さ」を指す。
+       固定のmmで持つと、利用者が印刷ダイアログで余白を広げたときに
+       図面が用紙をはみ出して切れてしまうので、用紙に追従させる。
+       22mm は見出し（約16mm）と余裕のぶん。
+       --print-plan-h は縮尺を指定したときだけ JS が none を入れる */
     .plan svg {
       width: var(--print-w); max-width: 100%;
-      max-height: var(--print-plan-h, none);
+      max-height: var(--print-plan-h, calc(100vh - 22mm));
       margin: 0; box-shadow: none;
     }
     .print-header {
@@ -618,9 +621,10 @@ function render() {
     '<small> ' + x[2] + '</small></span></div>').join("");
 
   // --- 印刷サイズ ---
-  // A4横・余白12mmなので、紙に載せられるのは 273mm × 186mm。
-  // 1ページ目は見出し（実測で約16mm）と余裕を除いた高さに図面を収める。
-  const PAGE_W = 273, PLAN_H = 165;
+  // 図面の高さはCSS側で 100vh から算出し、用紙や余白の設定に追従させる。
+  // ここで見るのは縮尺を指定したときだけ。A4横・余白15mmのときに
+  // 紙へ載るのは 267mm × 180mm、うち図面に使えるのは約160mm。
+  const PAGE_W = 267, PLAN_H = 160;
   const denom = +$("scale").value;
   const root = document.documentElement;
   const notes2 = notes.slice();
@@ -632,14 +636,15 @@ function render() {
     root.style.setProperty("--print-w", mmW.toFixed(1) + "mm");
     root.style.setProperty("--print-plan-h", "none");
     if (mmW > PAGE_W || mmH > PLAN_H) {
-      notes2.push("1:" + denom + "では図面が1ページ（" + PAGE_W + "×" + PLAN_H +
-        "mm）に収まりません（必要" + mmW.toFixed(0) + "×" + mmH.toFixed(0) +
+      notes2.push("1:" + denom + "では図面がA4横1ページ（余白15mmで" +
+        PAGE_W + "×" + PLAN_H + "mm）に収まりません（必要" +
+        mmW.toFixed(0) + "×" + mmH.toFixed(0) +
         "mm）。縮尺を小さくするか「用紙に合わせる」にしてください。");
     }
   } else {
-    // 用紙に合わせるときは、幅と高さの両方を紙に収める
+    // 用紙に合わせるときは高さの上限をCSSの計算式に任せる
     root.style.setProperty("--print-w", "100%");
-    root.style.setProperty("--print-plan-h", PLAN_H + "mm");
+    root.style.removeProperty("--print-plan-h");
   }
   $("warn").textContent = notes2.join(" ");
 
