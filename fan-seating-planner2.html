@@ -1,0 +1,663 @@
+<meta charset="utf-8">
+<title>扇型座席レイアウト作成</title>
+<style>
+  /* ---------- 配色とタイポグラフィの定義 ---------- */
+  :root {
+    --paper:    #e9e7e0;
+    --panel:    #f5f4f0;
+    --ink:      #23272a;
+    --ink-soft: #6b7074;
+    --rule:     #c7c4ba;
+    --stage:    #1f4b47;
+    --mark:     #9a7635;
+    --print-w:  100%;     /* 印刷スケール指定時にJSが書き換える */
+
+    --font-ui: "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
+               "Yu Gothic", "Noto Sans JP", sans-serif;
+    --font-title: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.7;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .masthead { padding: 28px 32px 20px; border-bottom: 1px solid var(--rule); }
+  .masthead h1 {
+    font-family: var(--font-title);
+    font-size: 26px; font-weight: 600; letter-spacing: 0.04em; margin: 0 0 4px;
+  }
+  .masthead p { margin: 0; color: var(--ink-soft); max-width: 62ch; }
+
+  .workspace { display: grid; grid-template-columns: 330px minmax(0, 1fr); align-items: start; }
+
+  /* ---------- 左：入力パネル ---------- */
+  .controls {
+    background: var(--panel);
+    border-right: 1px solid var(--rule);
+    padding: 24px 26px 40px;
+    min-height: calc(100vh - 110px);
+  }
+  .controls h2 {
+    font-size: 13px; font-weight: 600; margin: 26px 0 12px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--rule);
+  }
+  .controls h2:first-child { margin-top: 0; }
+
+  .field {
+    display: grid; grid-template-columns: 1fr 96px;
+    align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  .field label { color: var(--ink-soft); }
+  .field--wide { grid-template-columns: 1fr; }
+
+  input[type="number"], input[type="text"], select {
+    width: 100%; padding: 6px 8px; font: inherit;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink); background: #fff;
+    border: 1px solid var(--rule); border-radius: 2px;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--stage); outline-offset: 1px;
+  }
+
+  .check { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; color: var(--ink-soft); }
+
+  .actions { display: grid; gap: 8px; margin-top: 24px; }
+  button {
+    font: inherit; padding: 9px 12px;
+    background: var(--stage); color: #fff;
+    border: 1px solid var(--stage); border-radius: 2px; cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--ink); border-color: var(--rule); }
+  button:hover { filter: brightness(1.08); }
+
+  .solve-note {
+    margin: 10px 0 0; padding: 9px 10px; background: #fff;
+    border-left: 3px solid var(--mark); font-size: 13px; line-height: 1.6;
+  }
+  .solve-note:empty { display: none; }
+
+  /* ---------- 右：図面と一覧 ---------- */
+  .sheet { padding: 24px 32px 60px; }
+
+  .readout {
+    display: flex; flex-wrap: wrap; gap: 0 36px;
+    padding-bottom: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--rule);
+  }
+  .readout div { display: flex; align-items: baseline; gap: 8px; }
+  .readout span.k { color: var(--ink-soft); font-size: 12px; }
+  .readout span.v { font-size: 20px; font-family: var(--font-title); }
+  .readout span.v small { font-size: 12px; font-family: var(--font-ui); color: var(--ink-soft); }
+
+  .plan { background: #fff; border: 1px solid var(--rule); padding: 12px; }
+  .plan svg { display: block; width: 100%; height: auto; }
+
+  .warn {
+    margin: 14px 0 0; padding: 10px 12px; background: #fff;
+    border-left: 3px solid var(--mark);
+  }
+  .warn:empty { display: none; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+  caption {
+    text-align: left; font-family: var(--font-title);
+    font-size: 16px; padding-bottom: 8px;
+  }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  th { color: var(--ink-soft); font-weight: 400; font-size: 12px; }
+  th:first-child, td:first-child { text-align: left; }
+
+  .procedure { margin-top: 30px; }
+  .procedure h3 { font-family: var(--font-title); font-size: 16px; margin: 0 0 8px; }
+  .procedure ol { margin: 0; padding-left: 1.3em; max-width: 72ch; }
+  .procedure li { margin-bottom: 4px; }
+
+  .print-header { display: none; }
+
+  @media (max-width: 860px) {
+    .workspace { grid-template-columns: 1fr; }
+    .controls { min-height: 0; border-right: none; border-bottom: 1px solid var(--rule); }
+    .sheet { padding: 20px; }
+  }
+
+  /* ---------- 印刷・PDF保存用 ---------- */
+  @page { size: A4 landscape; margin: 12mm; }
+  @media print {
+    body { background: #fff; font-size: 10pt; }
+    .masthead, .controls, .actions, .warn { display: none; }
+    .workspace { display: block; }
+    .sheet { padding: 0; }
+    .plan { border: none; padding: 0; }
+    .plan svg { width: var(--print-w); max-width: 100%; }
+    .print-header {
+      display: block; border-bottom: 1px solid var(--ink);
+      padding-bottom: 6px; margin-bottom: 10px;
+    }
+    .print-header h1 { font-family: var(--font-title); font-size: 16pt; margin: 0; }
+    .print-header p { margin: 2px 0 0; color: #000; font-size: 9pt; }
+    .readout { border-bottom: none; padding-bottom: 6px; gap: 0 24px; }
+    .readout span.v { font-size: 12pt; }
+    table, .procedure { break-before: page; page-break-before: always; }
+  }
+</style>
+
+<header class="masthead">
+  <h1>扇型座席レイアウト</h1>
+  <p>ステージ中心を扇の要として座席を円弧状に配置し、現場で椅子を並べるためのマーキング表まで出力します。</p>
+</header>
+
+<div class="workspace">
+
+  <!-- ===== 入力パネル ===== -->
+  <form class="controls" id="form" onsubmit="return false">
+    <h2>公演</h2>
+    <div class="field field--wide">
+      <input type="text" id="title" value="蔵王の森コンサート" aria-label="公演名">
+    </div>
+
+    <h2>ステージ</h2>
+    <div class="field">
+      <label for="stageW">ステージ幅 (m)</label>
+      <input type="number" id="stageW" value="10" min="1" step="0.5">
+    </div>
+    <div class="field">
+      <label for="stageD">ステージ奥行 (m)</label>
+      <input type="number" id="stageD" value="4" min="1" step="0.5">
+    </div>
+
+    <h2>客席</h2>
+    <div class="field">
+      <label for="r0">最前列までの距離 (m)</label>
+      <input type="number" id="r0" value="6" min="1" step="0.1">
+    </div>
+    <div class="field">
+      <label for="rows">列数</label>
+      <input type="number" id="rows" value="12" min="1" max="120" step="1">
+    </div>
+    <div class="field">
+      <label for="fan">扇の開き角 (°)</label>
+      <input type="number" id="fan" value="90" min="5" max="180" step="1">
+    </div>
+
+    <h2>座席の寸法</h2>
+    <div class="field">
+      <label for="seatW">座席の幅 (m)</label>
+      <input type="number" id="seatW" value="0.48" min="0.3" step="0.01">
+    </div>
+    <div class="field">
+      <label for="seatGap">座席の間隔 (m)</label>
+      <input type="number" id="seatGap" value="0.02" min="0" step="0.01">
+    </div>
+    <div class="field">
+      <label for="rowGap">列の間隔 (m)</label>
+      <input type="number" id="rowGap" value="0.9" min="0.3" step="0.05">
+    </div>
+
+    <h2>座席の割り当て</h2>
+    <div class="field field--wide">
+      <select id="mode">
+        <option value="max">列ごとに入るだけ配置する</option>
+        <option value="same">全列を同じ席数にそろえる</option>
+      </select>
+    </div>
+    <div class="field field--wide">
+      <select id="numbering">
+        <option value="left">番号は左端から連番</option>
+        <option value="center">番号は中央から左右へ</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="showNum" checked> 図に座席番号を入れる</label>
+
+    <h2>設営ガイド</h2>
+    <label class="check"><input type="checkbox" id="showGrid"> 1mグリッドを重ねる</label>
+    <label class="check"><input type="checkbox" id="showArc" checked> 各列の円弧を描く</label>
+    <label class="check"><input type="checkbox" id="showRadial"> 放射ガイド線を描く</label>
+    <div class="field">
+      <label for="markEvery">目印を付ける間隔 (席)</label>
+      <input type="number" id="markEvery" value="5" min="1" max="20" step="1">
+    </div>
+    <div class="field field--wide">
+      <label for="scale" style="display:block;margin-bottom:6px">印刷スケール</label>
+      <select id="scale">
+        <option value="0">用紙に合わせる</option>
+        <option value="100">1 : 100</option>
+        <option value="200">1 : 200</option>
+        <option value="500">1 : 500</option>
+      </select>
+    </div>
+
+    <h2>席数から逆算</h2>
+    <div class="field">
+      <label for="target">目標の席数</label>
+      <input type="number" id="target" value="400" min="1" step="10">
+    </div>
+    <div class="field field--wide">
+      <select id="solveFor">
+        <option value="rows">列数を調整する</option>
+        <option value="fan">扇の開き角を調整する</option>
+        <option value="r0">最前列までの距離を調整する</option>
+      </select>
+    </div>
+    <button type="button" class="secondary" id="btnSolve">この席数に合わせる</button>
+    <p class="solve-note" id="solveNote"></p>
+
+    <div class="actions">
+      <button type="button" id="btnPrint">印刷 / PDFで保存</button>
+      <button type="button" class="secondary" id="btnCsv">座席一覧をCSVで保存</button>
+      <button type="button" class="secondary" id="btnGuideCsv">マーキング表をCSVで保存</button>
+      <button type="button" class="secondary" id="btnSvg">図面をSVGで保存</button>
+    </div>
+  </form>
+
+  <!-- ===== 図面と一覧 ===== -->
+  <main class="sheet">
+    <div class="print-header">
+      <h1 id="printTitle"></h1>
+      <p id="printMeta"></p>
+    </div>
+
+    <div class="readout" id="readout"></div>
+    <div class="plan" id="plan"></div>
+    <p class="warn" id="warn"></p>
+
+    <div class="procedure">
+      <h3>設営手順</h3>
+      <ol id="steps"></ol>
+    </div>
+
+    <table id="guideTable">
+      <caption>現場マーキング表（中心杭からの実測値）</caption>
+      <thead>
+        <tr>
+          <th>列</th><th>席数</th><th>ロープの長さ (m)</th><th>弧に沿った座席間隔 (m)</th>
+          <th>弧の長さ (m)</th><th>端の角度 (°)</th>
+          <th>端杭：左右 (m)</th><th>端杭：前後 (m)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <table id="rowTable">
+      <caption>列ごとの内訳</caption>
+      <thead>
+        <tr>
+          <th>列</th><th>席数</th><th>要からの距離 (m)</th>
+          <th>座席の角度間隔 (°)</th><th>列の実幅 (m)</th><th>座席番号</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
+</div>
+
+<script>
+// =====================================================================
+// 扇型座席レイアウトの計算
+//
+// ステージ前面の中央を原点（扇の要）として、半径 r の円弧上に座席を並べる。
+// 座席のピッチ（幅 + 間隔）を一定に保つには、半径が大きい列ほど
+// 角度の間隔を小さくする必要がある。
+// 弦の長さ = ピッチ になる中心角は 2*asin(ピッチ / (2*r)) で求まる。
+// =====================================================================
+
+const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180;
+
+/** 0,1,2… を A,B,C…,Z,AA,AB… の列記号に変換する */
+function rowLabel(i) {
+  let s = "";
+  i += 1;
+  while (i > 0) {
+    const r = (i - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    i = Math.floor((i - 1) / 26);
+  }
+  return s;
+}
+
+function readParams() {
+  return {
+    title:     $("title").value.trim(),
+    stageW:    +$("stageW").value,
+    stageD:    +$("stageD").value,
+    r0:        +$("r0").value,
+    rows:      Math.round(+$("rows").value),
+    fan:       +$("fan").value,
+    seatW:     +$("seatW").value,
+    seatGap:   +$("seatGap").value,
+    rowGap:    +$("rowGap").value,
+    mode:      $("mode").value,
+    numbering: $("numbering").value,
+    markEvery: Math.max(1, Math.round(+$("markEvery").value)),
+  };
+}
+
+function seatNumber(k, n, style) {
+  if (style === "left") return String(k + 1);
+  const d = k - (n - 1) / 2;
+  if (d === 0) return "1";
+  return d < 0 ? String(Math.round(-d * 2)) : String(Math.round(d * 2) + 1);
+}
+
+/** パラメータからレイアウトを計算する（DOMには触れない） */
+function computeLayout(p) {
+  const pitch = p.seatW + p.seatGap;
+  const fanRad = p.fan * DEG;
+  const rows = [];
+  const notes = [];
+
+  for (let i = 0; i < p.rows; i++) {
+    const r = p.r0 + i * p.rowGap;
+    const ratio = Math.min(1, pitch / (2 * r));
+    const step = 2 * Math.asin(ratio);
+    const count = Math.max(1, Math.floor(fanRad / step) + 1);
+    rows.push({ index: i, label: rowLabel(i), r, step, count });
+  }
+
+  if (p.mode === "same" && rows.length) {
+    const min = Math.min.apply(null, rows.map(r => r.count));
+    rows.forEach(r => {
+      r.count = min;
+      if (min > 1) r.step = fanRad / (min - 1);
+    });
+    notes.push("全列を" + min + "席にそろえたため、後列ほど座席の間隔が広がります。");
+  }
+
+  const seats = [];
+  rows.forEach(row => {
+    const n = row.count;
+    const half = (n - 1) / 2;
+    for (let k = 0; k < n; k++) {
+      const a = (k - half) * row.step;
+      seats.push({
+        row: row.label, num: seatNumber(k, n, p.numbering), index: k,
+        r: row.r, deg: a / DEG,
+        x: row.r * Math.sin(a), y: row.r * Math.cos(a),
+      });
+    }
+    // 現場でそのまま測れる値をまとめておく
+    row.halfAngle = half * row.step;             // 中心線から端までの角度
+    row.arcPitch  = row.r * row.step;            // 弧に沿った座席の間隔
+    row.arcLength = row.r * (n - 1) * row.step;  // 端から端までの弧の長さ
+    row.endX      = row.r * Math.sin(row.halfAngle);
+    row.endY      = row.r * Math.cos(row.halfAngle);
+    row.width     = 2 * row.endX + pitch;
+  });
+
+  if (rows[0] && rows[0].count < 2) {
+    notes.push("最前列に座席が1つしか入りません。最前列までの距離か扇の開き角を大きくしてください。");
+  }
+  return { p, pitch, rows, seats, notes };
+}
+
+/** SVGの図面を組み立てる */
+function draw(data) {
+  const { p, rows, seats } = data;
+  const rMax = rows.length ? rows[rows.length - 1].r : p.r0;
+
+  const halfW = Math.max.apply(null, [p.stageW / 2].concat(rows.map(r => r.width / 2)));
+  const pad = 2;
+  const minX = -halfW - pad, w = (halfW + pad) * 2;
+  const minY = -p.stageD - pad, h = (rMax + 1.5) + p.stageD + pad * 2;
+  data.extent = { minX, minY, w, h };
+
+  const s = [];
+  s.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="' +
+    minX.toFixed(2) + ' ' + minY.toFixed(2) + ' ' + w.toFixed(2) + ' ' + h.toFixed(2) + '">');
+
+  // --- 1mグリッド（5mごとに濃くする）---
+  if ($("showGrid").checked) {
+    const g = [];
+    for (let x = Math.ceil(minX); x <= minX + w; x++) {
+      const bold = x % 5 === 0;
+      g.push('<line x1="' + x + '" y1="' + minY + '" x2="' + x + '" y2="' + (minY + h) +
+        '" stroke="' + (bold ? "#b9c4c2" : "#e2e6e5") + '" stroke-width="' + (bold ? 0.035 : 0.018) + '"/>');
+      if (bold) g.push('<text x="' + (x + 0.12) + '" y="' + (minY + 0.5) +
+        '" font-size="0.32" fill="#9aa5a3" font-family="sans-serif">' + x + '</text>');
+    }
+    for (let y = Math.ceil(minY); y <= minY + h; y++) {
+      const bold = y % 5 === 0;
+      g.push('<line x1="' + minX + '" y1="' + y + '" x2="' + (minX + w) + '" y2="' + y +
+        '" stroke="' + (bold ? "#b9c4c2" : "#e2e6e5") + '" stroke-width="' + (bold ? 0.035 : 0.018) + '"/>');
+      if (bold) g.push('<text x="' + (minX + 0.12) + '" y="' + (y - 0.15) +
+        '" font-size="0.32" fill="#9aa5a3" font-family="sans-serif">' + y + '</text>');
+    }
+    s.push(g.join(""));
+  }
+
+  // --- 放射ガイド線（10度ごと）---
+  if ($("showRadial").checked) {
+    for (let d = -p.fan / 2; d <= p.fan / 2 + 0.001; d += 10) {
+      const a = d * DEG, rr = rMax + 1;
+      s.push('<line x1="0" y1="0" x2="' + (rr * Math.sin(a)).toFixed(2) + '" y2="' +
+        (rr * Math.cos(a)).toFixed(2) + '" stroke="#d8d4c8" stroke-width="0.025"/>');
+    }
+  }
+
+  // --- 各列の円弧（ロープで描く軌跡そのもの）---
+  if ($("showArc").checked) {
+    rows.forEach(row => {
+      const a = row.halfAngle;
+      const x1 = (-row.r * Math.sin(a)).toFixed(3), y1 = (row.r * Math.cos(a)).toFixed(3);
+      const x2 = (row.r * Math.sin(a)).toFixed(3),  y2 = y1;
+      const large = 2 * a > Math.PI ? 1 : 0;
+      s.push('<path d="M ' + x1 + ' ' + y1 + ' A ' + row.r.toFixed(3) + ' ' + row.r.toFixed(3) +
+        ' 0 ' + large + ' 0 ' + x2 + ' ' + y2 + '" fill="none" stroke="#9a7635" ' +
+        'stroke-width="0.025" stroke-dasharray="0.3 0.2"/>');
+    });
+  }
+
+  // --- ステージと中心杭 ---
+  s.push('<rect x="' + (-p.stageW / 2) + '" y="' + (-p.stageD) + '" width="' + p.stageW +
+    '" height="' + p.stageD + '" fill="#1f4b47" opacity="0.9"/>');
+  s.push('<text x="0" y="' + (-p.stageD / 2 + 0.25) + '" text-anchor="middle" font-size="0.8" ' +
+    'fill="#ffffff" font-family="sans-serif">STAGE</text>');
+  s.push('<line x1="0" y1="' + (-p.stageD) + '" x2="0" y2="' + (rMax + 1) +
+    '" stroke="#c7c4ba" stroke-width="0.03" stroke-dasharray="0.4 0.3"/>');
+  s.push('<circle cx="0" cy="0" r="0.22" fill="none" stroke="#9a7635" stroke-width="0.06"/>' +
+    '<line x1="-0.35" y1="0" x2="0.35" y2="0" stroke="#9a7635" stroke-width="0.05"/>' +
+    '<line x1="0" y1="-0.35" x2="0" y2="0.35" stroke="#9a7635" stroke-width="0.05"/>' +
+    '<text x="0.5" y="-0.3" font-size="0.4" fill="#9a7635" font-family="sans-serif">中心杭</text>');
+
+  // --- 座席（ステージを向くよう回転。幅は実寸なので隙間が間隔になる）---
+  const sw = p.seatW, sd = 0.42;
+  const showNum = $("showNum").checked;
+  seats.forEach(st => {
+    // n席ごとの目印は塗りつぶして目立たせる
+    const isMark = st.index % p.markEvery === 0;
+    s.push('<g transform="translate(' + st.x.toFixed(3) + ' ' + st.y.toFixed(3) +
+      ') rotate(' + (-st.deg).toFixed(2) + ')">' +
+      '<rect x="' + (-sw / 2) + '" y="' + (-sd / 2) + '" width="' + sw + '" height="' + sd +
+      '" rx="0.06" fill="' + (isMark ? "#f0e4c8" : "#fdfdfb") + '" stroke="#23272a" stroke-width="' +
+      (isMark ? 0.04 : 0.022) + '"/>' +
+      (showNum ? '<text x="0" y="0.1" text-anchor="middle" font-size="0.2" fill="#6b7074" ' +
+        'font-family="sans-serif">' + st.num + '</text>' : '') +
+      '</g>');
+  });
+
+  // --- 列記号と端杭 ---
+  rows.forEach(row => {
+    const a = -row.halfAngle;
+    const x = row.r * Math.sin(a) - 0.75 * Math.cos(a);
+    const y = row.r * Math.cos(a) + 0.75 * Math.sin(a);
+    s.push('<text x="' + x.toFixed(2) + '" y="' + (y + 0.15).toFixed(2) +
+      '" text-anchor="middle" font-size="0.42" fill="#9a7635" font-family="sans-serif">' +
+      row.label + '</text>');
+    [-1, 1].forEach(sign => {
+      s.push('<circle cx="' + (sign * row.endX).toFixed(3) + '" cy="' + row.endY.toFixed(3) +
+        '" r="0.1" fill="#9a7635"/>');
+    });
+  });
+
+  // --- 1mの物差し ---
+  const sx = minX + 0.8, sy = minY + h - 0.8;
+  s.push('<line x1="' + sx + '" y1="' + sy + '" x2="' + (sx + 1) + '" y2="' + sy +
+    '" stroke="#23272a" stroke-width="0.05"/>' +
+    '<text x="' + (sx + 0.5) + '" y="' + (sy - 0.25) + '" text-anchor="middle" font-size="0.32" ' +
+    'fill="#23272a" font-family="sans-serif">1m</text>');
+
+  s.push('</svg>');
+  return s.join("\n");
+}
+
+/** 画面全体を更新する */
+function render() {
+  const data = computeLayout(readParams());
+  const { p, pitch, rows, seats, notes } = data;
+  window.__data = data;
+
+  $("plan").innerHTML = draw(data);
+
+  const depth = rows.length ? rows[rows.length - 1].r : 0;
+  const widest = rows.length ? Math.max.apply(null, rows.map(r => r.width)) : 0;
+
+  $("readout").innerHTML = [
+    ["合計席数", seats.length, "席"],
+    ["列数", rows.length, "列"],
+    ["最後列までの距離", depth.toFixed(1), "m"],
+    ["客席の最大幅", widest.toFixed(1), "m"],
+  ].map(x => '<div><span class="k">' + x[0] + '</span><span class="v">' + x[1] +
+    '<small> ' + x[2] + '</small></span></div>').join("");
+
+  // 印刷スケールの指定があれば、図面の実寸をミリ単位で固定する
+  const denom = +$("scale").value;
+  const notes2 = notes.slice();
+  if (denom > 0) {
+    const mm = data.extent.w * 1000 / denom;
+    document.documentElement.style.setProperty("--print-w", mm.toFixed(1) + "mm");
+    if (mm > 273) notes2.push("1:" + denom + "ではA4横（273mm）に収まりません。縮尺を小さくしてください。");
+  } else {
+    document.documentElement.style.setProperty("--print-w", "100%");
+  }
+  $("warn").textContent = notes2.join(" ");
+
+  // --- 現場マーキング表 ---
+  $("guideTable").querySelector("tbody").innerHTML = rows.map(r =>
+    "<tr><td>" + r.label + "</td><td>" + r.count + "</td><td>" + r.r.toFixed(2) +
+    "</td><td>" + r.arcPitch.toFixed(3) + "</td><td>" + r.arcLength.toFixed(2) +
+    "</td><td>" + (r.halfAngle / DEG).toFixed(1) + "</td><td>±" + r.endX.toFixed(2) +
+    "</td><td>" + r.endY.toFixed(2) + "</td></tr>"
+  ).join("");
+
+  $("rowTable").querySelector("tbody").innerHTML = rows.map(r => {
+    const inRow = seats.filter(s => s.row === r.label).map(s => +s.num);
+    const range = Math.min.apply(null, inRow) + " – " + Math.max.apply(null, inRow);
+    return "<tr><td>" + r.label + "</td><td>" + r.count + "</td><td>" + r.r.toFixed(2) +
+      "</td><td>" + (r.step / DEG).toFixed(2) + "</td><td>" + r.width.toFixed(2) +
+      "</td><td>" + range + "</td></tr>";
+  }).join("");
+
+  // --- 設営手順（実際の数値を差し込む）---
+  const gauge = (pitch * p.markEvery).toFixed(2);
+  $("steps").innerHTML = [
+    "ステージ前面の中央に中心杭を打つ。すべての寸法はこの杭からの実測値です。",
+    "中心杭から客席側へ巻尺をまっすぐ伸ばし、センターラインとして地面に固定する。ステージ前面と直角になっているか、3-4-5の直角出し（3m・4mの辺に対して対角が5m）で確認する。",
+    "各列の端杭を打つ。マーキング表の「端杭：前後」だけセンターラインを進み、そこから直角に左右へ「端杭：左右」の距離を測った2点です。",
+    "中心杭を軸に、ロープを「ロープの長さ」に合わせて張り、左右の端杭の間を弧を描くように歩いてラインを引く。石灰やビニールテープで印を付けます。",
+    "弧に沿って巻尺を置き、" + pitch.toFixed(2) + "mごとに椅子の中心を印す。図で色が付いた席が" +
+      p.markEvery + "席ごとの目印なので、" + gauge + "mの物差し棒を作っておくと巻尺なしで送っていけます。",
+    "椅子を印に合わせ、背もたれが中心杭を向くように据える。座席番号は列の" +
+      ($("numbering").value === "left" ? "左端から連番" : "中央から左右へ") + "です。",
+  ].map(t => "<li>" + t + "</li>").join("");
+
+  $("printTitle").textContent = p.title || "座席レイアウト";
+  $("printMeta").textContent =
+    "扇の開き角 " + p.fan + "° ／ 最前列まで " + p.r0 + "m ／ 列間隔 " + p.rowGap +
+    "m ／ 座席 " + p.seatW + "m + 間隔 " + p.seatGap + "m ／ 合計 " + seats.length +
+    "席" + (denom > 0 ? " ／ 縮尺 1:" + denom : "") +
+    " ／ 作成 " + new Date().toLocaleDateString("ja-JP");
+}
+
+// =====================================================================
+// 席数からの逆算
+// 席数は列数・開き角・最前列距離のどれに対しても単調に増えるので、
+// 二分探索で目標席数を初めて満たす値を探せる。
+// =====================================================================
+
+function totalSeats(p) { return computeLayout(p).seats.length; }
+
+function solve(key, target, lo, hi, decimals) {
+  const base = readParams();
+  const test = v => { const q = Object.assign({}, base); q[key] = v; return totalSeats(q); };
+
+  if (test(hi) < target) return null;
+
+  if (key === "rows") {
+    for (let n = Math.max(1, lo); n <= hi; n++) if (test(n) >= target) return n;
+    return null;
+  }
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (test(mid) >= target) hi = mid; else lo = mid;
+  }
+  // 四捨五入すると目標を下回ることがあるので切り上げて丸める
+  const unit = Math.pow(10, decimals);
+  return Math.ceil(hi * unit) / unit;
+}
+
+$("btnSolve").addEventListener("click", () => {
+  const target = Math.round(+$("target").value);
+  const key = $("solveFor").value;
+  const spec = {
+    rows: { lo: 1, hi: 120, dec: 0, label: "列数",             unit: "列" },
+    fan:  { lo: 5, hi: 180, dec: 1, label: "扇の開き角",       unit: "°"  },
+    r0:   { lo: 1, hi: 200, dec: 1, label: "最前列までの距離", unit: "m"  },
+  }[key];
+
+  const v = solve(key, target, spec.lo, spec.hi, spec.dec);
+  if (v === null) {
+    $("solveNote").textContent = spec.label + "を" + spec.hi + spec.unit + "まで広げても" +
+      target + "席に届きません。他の項目も見直してください。";
+    return;
+  }
+  $(key).value = v;
+  render();
+  const got = window.__data.seats.length;
+  $("solveNote").textContent = spec.label + " " + v + spec.unit + " で " + got +
+    "席（目標 " + target + "席、" + (got - target >= 0 ? "+" : "") + (got - target) + "席）。";
+});
+
+/** ファイルとして保存する */
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type: type }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+const csv = rows => "\uFEFF" + rows.map(r => r.join(",")).join("\r\n");
+
+$("form").addEventListener("input", render);
+$("btnPrint").addEventListener("click", () => window.print());
+
+$("btnCsv").addEventListener("click", () => {
+  const out = [["列", "座席番号", "要からの距離(m)", "角度(度)", "X(m)", "Y(m)"]];
+  window.__data.seats.forEach(s => out.push([
+    s.row, s.num, s.r.toFixed(3), s.deg.toFixed(3), s.x.toFixed(3), s.y.toFixed(3),
+  ]));
+  download("座席一覧.csv", csv(out), "text/csv;charset=utf-8");
+});
+
+$("btnGuideCsv").addEventListener("click", () => {
+  const out = [["列", "席数", "ロープの長さ(m)", "弧に沿った座席間隔(m)", "弧の長さ(m)",
+                "端の角度(度)", "端杭_左右(m)", "端杭_前後(m)"]];
+  window.__data.rows.forEach(r => out.push([
+    r.label, r.count, r.r.toFixed(2), r.arcPitch.toFixed(3), r.arcLength.toFixed(2),
+    (r.halfAngle / DEG).toFixed(1), r.endX.toFixed(2), r.endY.toFixed(2),
+  ]));
+  download("マーキング表.csv", csv(out), "text/csv;charset=utf-8");
+});
+
+$("btnSvg").addEventListener("click", () => {
+  download("座席図.svg", $("plan").innerHTML.trim(), "image/svg+xml");
+});
+
+render();
+</script>
